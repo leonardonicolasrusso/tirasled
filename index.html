@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Catálogo Tiras LED</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        /* Estilos generales */
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+        }
+
+        p {
+            margin-top: 0;
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        /* Barra de búsqueda */
+        .search-box {
+            display: flex;
+            gap: 8px;
+            margin: 12px 0 8px 0;
+        }
+
+        .search-box input[type="text"] {
+            flex: 1;
+            padding: 8px 10px;
+            font-size: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .search-box button {
+            padding: 8px 14px;
+            font-size: 0.95rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #007bff;
+            color: #fff;
+        }
+
+        .search-box button:hover {
+            opacity: 0.9;
+        }
+
+        .error-message {
+            color: #c00;
+            font-size: 0.9rem;
+            margin: 4px 0 8px 0;
+        }
+
+        .small-note {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        /* Contenedor tabla y resultados */
+        .table-wrapper,
+        .results-wrapper {
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            padding: 8px;
+            margin-top: 8px;
+            overflow-x: auto;
+        }
+
+        .results-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 400px;
+            border: 1px solid #ccc;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            background: #fafafa;
+            z-index: 1;
+        }
+
+        th, td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        th {
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) td {
+            background: #fcfcfc;
+        }
+
+        /* Resaltado en resultados */
+        .highlight {
+            background: #fff9b0 !important;
+        }
+
+        /* Móviles */
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.1rem;
+            }
+
+            .search-box input[type="text"],
+            .search-box button {
+                font-size: 0.9rem;
+                padding: 6px 8px;
+            }
+
+            table {
+                min-width: auto;
+                font-size: 0.75rem;
+            }
+
+            th, td {
+                padding: 4px;
+                white-space: normal; /* se puede partir en varias líneas */
+            }
+        }
+
+        /* Estilo especial para el recuadro de resultados de búsqueda */
+        #search-results {
+            border: 2px solid #007bff;      /* borde azul más marcado */
+            box-shadow: 0 0 6px rgba(0, 123, 255, 0.25);
+        }
+
+        /* Filas de la tabla de resultados en amarillo suave */
+        #search-results table tbody tr td {
+            background: #fff9b0;            /* fondo amarillo suave */
+        }
+
+        /* Opcional: al pasar el dedo / mouse por encima, un poco más fuerte */
+        #search-results table tbody tr:hover td {
+            background: #ffe970;
+        }
+
+        /* Estilo para los links de TIRA */
+        a.tira-link {
+            color: #007bff;
+            text-decoration: underline;
+        }
+
+        a.tira-link:hover {
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Catálogo de Tiras LED</h1>
+        <p>Escribí el modelo y te mostramos las coincidencias debajo.</p>
+
+        <!-- Barra de búsqueda -->
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Escribí el modelo, ej: 32LB580">
+            <button id="clearButton">Limpiar</button>
+        </div>
+
+        <div id="message" class="error-message" style="display:none;"></div>
+
+        <!-- Resultados de búsqueda (tipo tienda online) -->
+        <div id="search-results" class="results-wrapper" style="display:none;">
+            <p class="results-title">Resultados de la búsqueda:</p>
+            <div id="results-table-container"></div>
+        </div>
+
+        <!-- Tabla completa del catálogo -->
+        <div class="table-wrapper">
+            <p class="results-title">Catálogo completo:</p>
+            <div id="table-container">
+                Cargando datos.
+            </div>
+        </div>
+
+        <p class="small-note">
+            A partir de 4 caracteres empieza a buscar solo.  
+            Si no hay resultados, probá escribir solo una parte del modelo (ej: "32LB").
+        </p>
+    </div>
+
+    <script>
+        const CSV_FILE_NAME = "tiras.csv";
+        const LINKS_CSV_FILE_NAME = "linkstiras.csv";
+
+        let modeloColIndex = 1; // por defecto
+        let tiraColIndex = -1;  // se detecta según encabezado "TIRA"
+        let headerRow = [];
+        let dataRows = [];
+
+        // Mapa TIRA -> LINK (del segundo CSV)
+        const tiraLinks = {};
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            // Primero cargamos los links de tiras
+            await loadLinksCSV().catch(err => {
+                console.error("Error cargando linkstiras.csv:", err);
+            });
+
+            // Luego cargamos el catálogo principal
+            await loadCSV();
+
+            const input = document.getElementById("searchInput");
+            const clearBtn = document.getElementById("clearButton");
+
+            // Buscar a medida que escribe (tipo tienda)
+            input.addEventListener("input", handleSearch);
+
+            // Enter también filtra (por si el cliente está acostumbrado)
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    handleSearch();
+                }
+            });
+
+            // Botón limpiar
+            clearBtn.addEventListener("click", () => {
+                input.value = "";
+                clearSearchResults();
+                hideMessage();
+            });
+        });
+
+        // Carga el CSV con links (TIRA, LINK) y arma el mapa tiraLinks
+        async function loadLinksCSV() {
+            try {
+                const response = await fetch(LINKS_CSV_FILE_NAME);
+
+                if (!response.ok) {
+                    console.warn("No se pudo cargar linkstiras.csv. El listado funcionará, pero sin links.");
+                    return;
+                }
+
+                const text = await response.text();
+                const rows = parseCSV(text);
+
+                if (!rows || rows.length === 0) {
+                    console.warn("linkstiras.csv está vacío.");
+                    return;
+                }
+
+                // Detectar fila de encabezados (que contenga TIRA o LINK)
+                let headerRowIndex = rows.findIndex(row =>
+                    row.some(cell => {
+                        const up = cell.trim().toUpperCase();
+                        return up === "TIRA" || up === "LINK";
+                    })
+                );
+                if (headerRowIndex === -1) headerRowIndex = 0;
+
+                const header = rows[headerRowIndex].map(c => c.trim().toUpperCase());
+                const tiraIndex = header.findIndex(c => c === "TIRA");
+                const linkIndex = header.findIndex(c => c === "LINK");
+
+                if (tiraIndex === -1 || linkIndex === -1) {
+                    console.warn("No se encontraron columnas TIRA y LINK en linkstiras.csv");
+                    return;
+                }
+
+                const data = rows.slice(headerRowIndex + 1);
+
+                data.forEach(row => {
+                    const tiraVal = (row[tiraIndex] || "").trim();
+                    const linkVal = (row[linkIndex] || "").trim();
+                    if (tiraVal && linkVal) {
+                        tiraLinks[tiraVal] = linkVal;
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error al procesar linkstiras.csv:", error);
+            }
+        }
+
+        // Carga el CSV principal y arma la tabla completa
+        async function loadCSV() {
+            const tableContainer = document.getElementById("table-container");
+
+            hideMessage();
+
+            try {
+                const response = await fetch(CSV_FILE_NAME);
+
+                if (!response.ok) {
+                    throw new Error("No se pudo cargar el archivo CSV. Verificá el nombre y que esté en la misma carpeta que este HTML.");
+                }
+
+                const text = await response.text();
+                const rows = parseCSV(text);
+
+                if (!rows || rows.length === 0) {
+                    tableContainer.textContent = "El CSV está vacío.";
+                    return;
+                }
+
+                // Detectar fila de encabezados
+                let headerRowIndex = rows.findIndex(row =>
+                    row.some(cell => cell.trim().toUpperCase() === "MODELO")
+                );
+                if (headerRowIndex === -1) headerRowIndex = 0;
+
+                headerRow = rows[headerRowIndex].map(cell => cell.trim());
+                dataRows = rows.slice(headerRowIndex + 1).filter(row =>
+                    row.some(cell => cell.trim() !== "")
+                );
+
+                // Detectar columna MODELO
+                const foundModeloIndex = headerRow.findIndex(cell =>
+                    cell.toUpperCase().includes("MODELO")
+                );
+                modeloColIndex = foundModeloIndex !== -1 ? foundModeloIndex : 1;
+
+                // Detectar columna TIRA
+                const foundTiraIndex = headerRow.findIndex(cell =>
+                    cell.toUpperCase().includes("TIRA")
+                );
+                tiraColIndex = foundTiraIndex !== -1 ? foundTiraIndex : -1;
+
+                // Crear tabla completa
+                const table = document.createElement("table");
+                table.id = "data-table";
+
+                const thead = document.createElement("thead");
+                const headerTr = document.createElement("tr");
+                headerRow.forEach(cellText => {
+                    const th = document.createElement("th");
+                    th.textContent = cellText;
+                    headerTr.appendChild(th);
+                });
+                thead.appendChild(headerTr);
+
+                const tbody = document.createElement("tbody");
+                dataRows.forEach(row => {
+                    const tr = document.createElement("tr");
+                    row.forEach((cellText, colIndex) => {
+                        const td = document.createElement("td");
+
+                        // Si esta columna es TIRA, intentamos poner un link
+                        if (colIndex === tiraColIndex) {
+                            const tiraCode = String(cellText).trim();
+                            const link = tiraLinks[tiraCode];
+
+                            if (link) {
+                                const a = document.createElement("a");
+                                a.href = link;
+                                a.target = "_blank";
+                                a.rel = "noopener noreferrer";
+                                a.textContent = cellText;
+                                a.className = "tira-link";
+                                td.appendChild(a);
+                            } else {
+                                td.textContent = cellText;
+                            }
+                        } else {
+                            td.textContent = cellText;
+                        }
+
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+
+                table.appendChild(thead);
+                table.appendChild(tbody);
+
+                tableContainer.innerHTML = "";
+                tableContainer.appendChild(table);
+
+            } catch (error) {
+                console.error(error);
+                tableContainer.textContent = "Error al cargar el CSV.";
+                showMessage(error.message);
+            }
+        }
+
+        // Parseo simple de CSV
+        function parseCSV(text) {
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+            return lines.map(line => line.split(","));
+        }
+
+        // Maneja la búsqueda tipo tienda online
+        function handleSearch() {
+            const input = document.getElementById("searchInput");
+            const queryRaw = input.value.trim();
+            const query = queryRaw.toLowerCase();
+
+            clearSearchResults();
+            hideMessage();
+
+            if (query.length === 0) {
+                return; // solo limpia
+            }
+
+            if (query.length < 4) {
+                showMessage("Escribí al menos 4 caracteres para buscar.");
+                return;
+            }
+
+            if (!dataRows || dataRows.length === 0) {
+                showMessage("La tabla todavía no se cargó.");
+                return;
+            }
+
+            // Filtrar filas por coincidencia en la columna MODELO
+            const matches = dataRows.filter(row => {
+                const cell = row[modeloColIndex] || "";
+                return cell.toString().trim().toLowerCase().includes(query);
+            });
+
+            if (matches.length === 0) {
+                showMessage("No se encontraron modelos que coincidan con esa búsqueda.");
+                return;
+            }
+
+            renderSearchResults(matches);
+        }
+
+        // Renderiza las filas coincidentes debajo del buscador
+        function renderSearchResults(matches) {
+            const resultsWrapper = document.getElementById("search-results");
+            const resultsContainer = document.getElementById("results-table-container");
+
+            const table = document.createElement("table");
+
+            const thead = document.createElement("thead");
+            const headerTr = document.createElement("tr");
+            headerRow.forEach(cellText => {
+                const th = document.createElement("th");
+                th.textContent = cellText;
+                headerTr.appendChild(th);
+            });
+            thead.appendChild(headerTr);
+
+            const tbody = document.createElement("tbody");
+            matches.forEach(row => {
+                const tr = document.createElement("tr");
+                row.forEach((cellText, colIndex) => {
+                    const td = document.createElement("td");
+
+                    // Igual que en la tabla completa: si es TIRA, convertir a link si existe
+                    if (colIndex === tiraColIndex) {
+                        const tiraCode = String(cellText).trim();
+                        const link = tiraLinks[tiraCode];
+
+                        if (link) {
+                            const a = document.createElement("a");
+                            a.href = link;
+                            a.target = "_blank";
+                            a.rel = "noopener noreferrer";
+                            a.textContent = cellText;
+                            a.className = "tira-link";
+                            td.appendChild(a);
+                        } else {
+                            td.textContent = cellText;
+                        }
+                    } else {
+                        td.textContent = cellText;
+                    }
+
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            resultsContainer.innerHTML = "";
+            resultsContainer.appendChild(table);
+
+            resultsWrapper.style.display = "block";
+        }
+
+        function clearSearchResults() {
+            const resultsWrapper = document.getElementById("search-results");
+            const resultsContainer = document.getElementById("results-table-container");
+            resultsContainer.innerHTML = "";
+            resultsWrapper.style.display = "none";
+        }
+
+        function showMessage(text) {
+            const messageDiv = document.getElementById("message");
+            messageDiv.textContent = text;
+            messageDiv.style.display = "block";
+        }
+
+        function hideMessage() {
+            const messageDiv = document.getElementById("message");
+            messageDiv.textContent = "";
+            messageDiv.style.display = "none";
+        }
+    </script>
+</body>
+</html>
