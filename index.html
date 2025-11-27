@@ -235,6 +235,7 @@
     <script>
         const CSV_FILE_NAME = "tiras.csv";
         const LINKS_CSV_FILE_NAME = "linkstiras.csv";
+        const STOCK_API_URL = "/api/stock"; // NUEVO: endpoint interno en Vercel
 
         let modeloColIndex = 1; // por defecto
         let tiraColIndex = -1;  // se detecta según encabezado "TIRA"
@@ -570,7 +571,7 @@
             }
         }
 
-        // Consulta (una sola vez por TIRA) el HTML del producto y detecta "SIN STOCK"
+        // Consulta (una sola vez por TIRA) usando la API de Vercel
         function updateStockBadge(tiraCode, badge) {
             const link = tiraLinks[tiraCode];
             if (!link) {
@@ -587,21 +588,12 @@
             // Estado inicial mientras consulta
             badge.textContent = "…";
 
-            // Nota: esto asume que este HTML se sirve desde el mismo dominio que la tienda
-            fetch(link)
-                .then(resp => {
-                    if (!resp.ok) {
-                        throw new Error("Respuesta no OK");
-                    }
-                    return resp.text();
-                })
-                .then(html => {
-                    let status;
-                    if (html.includes("SIN STOCK")) {
-                        status = "no-stock";
-                    } else {
-                        status = "in-stock";
-                    }
+            const url = STOCK_API_URL + "?url=" + encodeURIComponent(link);
+
+            fetch(url)
+                .then(resp => resp.json())
+                .then(data => {
+                    const status = data.status || "error";
                     tiraStockStatus[tiraCode] = status;
                     applyStatusToBadge(status, badge);
                 })
