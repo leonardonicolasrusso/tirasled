@@ -172,6 +172,31 @@
         a.tira-link:hover {
             text-decoration: none;
         }
+
+        /* Badges de stock */
+        .stock-badge {
+            margin-left: 6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .stock-in {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .stock-out {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .stock-error {
+            background: #ffeeba;
+            color: #856404;
+        }
     </style>
 </head>
 <body>
@@ -218,6 +243,8 @@
 
         // Mapa TIRA -> LINK (del segundo CSV)
         const tiraLinks = {};
+        // Cache de estado de stock TIRA -> 'in-stock' | 'no-stock' | 'error'
+        const tiraStockStatus = {};
 
         document.addEventListener("DOMContentLoaded", async () => {
             // Primero cargamos los links de tiras
@@ -363,22 +390,8 @@
                     row.forEach((cellText, colIndex) => {
                         const td = document.createElement("td");
 
-                        // Si esta columna es TIRA, intentamos poner un link
                         if (colIndex === tiraColIndex) {
-                            const tiraCode = String(cellText).trim();
-                            const link = tiraLinks[tiraCode];
-
-                            if (link) {
-                                const a = document.createElement("a");
-                                a.href = link;
-                                a.target = "_blank";
-                                a.rel = "noopener noreferrer";
-                                a.textContent = cellText;
-                                a.className = "tira-link";
-                                td.appendChild(a);
-                            } else {
-                                td.textContent = cellText;
-                            }
+                            renderTiraCell(td, cellText);
                         } else {
                             td.textContent = cellText;
                         }
@@ -466,22 +479,8 @@
                 row.forEach((cellText, colIndex) => {
                     const td = document.createElement("td");
 
-                    // Igual que en la tabla completa: si es TIRA, convertir a link si existe
                     if (colIndex === tiraColIndex) {
-                        const tiraCode = String(cellText).trim();
-                        const link = tiraLinks[tiraCode];
-
-                        if (link) {
-                            const a = document.createElement("a");
-                            a.href = link;
-                            a.target = "_blank";
-                            a.rel = "noopener noreferrer";
-                            a.textContent = cellText;
-                            a.className = "tira-link";
-                            td.appendChild(a);
-                        } else {
-                            td.textContent = cellText;
-                        }
+                        renderTiraCell(td, cellText);
                     } else {
                         td.textContent = cellText;
                     }
@@ -517,6 +516,100 @@
             const messageDiv = document.getElementById("message");
             messageDiv.textContent = "";
             messageDiv.style.display = "none";
+        }
+
+        /* ----------- STOCK: render de la celda TIRA + consulta de stock ----------- */
+
+        // Crea el contenido de la celda de TIRA: link + badge de stock
+        function renderTiraCell(td, cellText) {
+            const tiraCode = String(cellText).trim();
+
+            if (!tiraCode) {
+                td.textContent = cellText;
+                return;
+            }
+
+            const link = tiraLinks[tiraCode];
+
+            if (link) {
+                const a = document.createElement("a");
+                a.href = link;
+                a.target = "_blank";
+                a.rel = "noopener noreferrer";
+                a.textContent = cellText;
+                a.className = "tira-link";
+                td.appendChild(a);
+
+                const badge = document.createElement("span");
+                badge.className = "stock-badge";
+                badge.textContent = "…";
+                td.appendChild(document.createTextNode(" "));
+                td.appendChild(badge);
+
+                updateStockBadge(tiraCode, badge);
+            } else {
+                td.textContent = cellText;
+            }
+        }
+
+        // Aplica estilos y texto al badge según estado
+        function applyStatusToBadge(status, badge) {
+            badge.classList.remove("stock-in", "stock-out", "stock-error");
+
+            if (status === "in-stock") {
+                badge.textContent = "EN STOCK";
+                badge.classList.add("stock-in");
+            } else if (status === "no-stock") {
+                badge.textContent = "SIN STOCK";
+                badge.classList.add("stock-out");
+            } else if (status === "error") {
+                badge.textContent = "Error";
+                badge.classList.add("stock-error");
+            } else {
+                badge.textContent = "";
+            }
+        }
+
+        // Consulta (una sola vez por TIRA) el HTML del producto y detecta "SIN STOCK"
+        function updateStockBadge(tiraCode, badge) {
+            const link = tiraLinks[tiraCode];
+            if (!link) {
+                applyStatusToBadge("error", badge);
+                return;
+            }
+
+            // Si ya conocemos el estado de esta tira, lo reutilizamos
+            if (tiraStockStatus[tiraCode]) {
+                applyStatusToBadge(tiraStockStatus[tiraCode], badge);
+                return;
+            }
+
+            // Estado inicial mientras consulta
+            badge.textContent = "…";
+
+            // Nota: esto asume que este HTML se sirve desde el mismo dominio que la tienda
+            fetch(link)
+                .then(resp => {
+                    if (!resp.ok) {
+                        throw new Error("Respuesta no OK");
+                    }
+                    return resp.text();
+                })
+                .then(html => {
+                    let status;
+                    if (html.includes("SIN STOCK")) {
+                        status = "no-stock";
+                    } else {
+                        status = "in-stock";
+                    }
+                    tiraStockStatus[tiraCode] = status;
+                    applyStatusToBadge(status, badge);
+                })
+                .catch(err => {
+                    console.error("Error consultando stock de", tiraCode, err);
+                    tiraStockStatus[tiraCode] = "error";
+                    applyStatusToBadge("error", badge);
+                });
         }
     </script>
 </body>
